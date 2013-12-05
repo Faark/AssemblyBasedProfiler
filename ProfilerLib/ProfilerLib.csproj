@@ -53,6 +53,7 @@
     <Compile Include="ProfilingState.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="ProfilingEvents\ResetStateEvent.cs" />
+    <Compile Include="ReportGenerator.cs" />
     <Compile Include="Util.cs" />
   </ItemGroup>
   <ItemGroup>

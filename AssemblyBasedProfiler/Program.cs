@@ -17,9 +17,11 @@ namespace AssemblyBasedProfiller
         static void Main(string[] args)
         {
             //var fullArg = args.Length > 0 ? args.Aggregate((a, b) => a + b).Trim() : "";
-            //var fullArg = @"C:\ksp_rt\GameData\RemoteTech2\Plugins\RemoteTech2.dll";
-            var fullArg = @"C:\ksp_rt\GameData\MechJeb2\Plugins\MechJeb2.dll";
+            var fullArg = @"C:\ksp_rt\GameData\RemoteTech2\Plugins\RemoteTech2.dll";
+            //var fullArg = @"C:\ksp_rtOld\GameData\MechJeb2\Plugins\MechJeb2.dll";
             //var fullArg = @"C:\Users\Faark\Documents\GitHub\AssemblyBasedProfiler\TestApp\bin\Debug\TestLib.dll";
+            var autoSaveEvery = 30;
+            var autoSaveTo = "profiling.txt";
             if (fullArg != "" && !System.IO.File.Exists(fullArg))
             {
                 Console.WriteLine("Specified file does not exist: " + fullArg);
@@ -77,6 +79,11 @@ namespace AssemblyBasedProfiller
                     }
                 }
                 injector.Inject_RegisterMethodsAtType(locals, type);
+            }
+
+            if (autoSaveEvery > 0)
+            {
+                injector.Inject_SetupAutoSaving(autoSaveEvery, autoSaveTo);
             }
             Console.WriteLine("Finalizing.");
             //injector.Inject_RegisterPrimaryMethods(cctors);

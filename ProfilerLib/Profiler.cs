@@ -92,6 +92,37 @@ namespace ProfilerLib
             }
         }
 
+        public static int AutoDataSavingInterval { get; private set; }
+        public static string AutoDataSavingLocation { get; private set; }
+
+        static System.IO.FileStream autoSaveStream;
+        public static void SetAutoDataSaving(int secs_between, string loc)
+        {
+            AutoDataSavingInterval = Math.Max(secs_between, 0);
+            if (secs_between > 0)
+            {
+                if (loc != AutoDataSavingLocation)
+                {
+                    if (autoSaveStream != null)
+                        autoSaveStream.Close();
+                    autoSaveStream = System.IO.File.Open(loc, System.IO.FileMode.OpenOrCreate, System.IO.FileAccess.Write);
+                }
+                State.SetAutoSaving(secs_between, autoSaveStream);
+            }
+            else
+            {
+                State.SetAutoSaving(0, null);
+                if (autoSaveStream != null)
+                    autoSaveStream.Close();
+                autoSaveStream = null;
+            }
+            AutoDataSavingLocation = loc;
+        }
+        public static void SetAutoDataSaving(int secs_between = 0)
+        {
+            SetAutoDataSaving(secs_between, AutoDataSavingLocation);
+        }
+
         public static void Enter(int methodId)
         {
             unprocessedEvents.Enqueue(new EnterMethodEvent()
@@ -131,9 +162,9 @@ namespace ProfilerLib
                 throw new InvalidOperationException("Profiler thread is crashed, cannot reset data.", Exception);
             }
         }
+
         static class ReportGeneration
         {
-#warning we miss current stack frames... that might lead to invalid data /NaNs or worse..
             public static CaptureStateEvent AquireLock()
             {
                 CheckNotCrashed();
@@ -151,43 +182,6 @@ namespace ProfilerLib
                 cse.OnReadyToResume.Set();
             }
 
-            static void WriteSeconds(StringBuilder trg, double time)
-            {
-                // more advanced times?
-                trg.AppendFormat("{0:0.00}s", time / Stopwatch.Frequency);
-            }
-            static void GetLine(StringBuilder trg, ProfilingCallSite site, int indent, long timeParent, long timeTotal)
-            {
-                var globalShare = (double)site.RunDuration / (double)timeTotal;
-                var localShare = (double)site.RunDuration / (double)timeParent;
-                trg.Append(' ', indent * 2);
-                MethodLibrary.GetText(site.Method, trg);
-                trg.Append(": ")
-                    .Append(site.NumberOfCalls)
-                    .Append(" calls, runtime: ");
-                WriteSeconds(trg, site.RunDuration);
-                trg.Append(", ")
-                    .AppendFormat("{0:0.00}% of parent, {1:0.00}% of entire call tree", localShare, globalShare)
-                    .AppendLine();
-            }
-            public static void GetReportRecursiveLineBased(Action<string> consumer, StringBuilder trg, ProfilingCallSite site, int indent, long timeParent, long timeTotal)
-            {
-                GetLine(trg, site, indent, timeParent, timeTotal);
-                consumer(trg.ToString());
-                trg.Length = 0;
-                foreach (var sub in site.SubCalls.OrderByDescending(s => s.Value.RunDuration))
-                {
-                    GetReportRecursiveLineBased(consumer, trg, sub.Value, indent + 1, site.RunDuration, timeTotal);
-                }
-            }
-            public static void GetReportRecursive(StringBuilder trg, ProfilingCallSite site, int indent, long timeParent, long timeTotal)
-            {
-                GetLine(trg, site, indent, timeParent, timeTotal);
-                foreach (var sub in site.SubCalls.OrderByDescending(s => s.Value.RunDuration))
-                {
-                    GetReportRecursive(trg, sub.Value, indent + 1, site.RunDuration, timeTotal);
-                }
-            }
         }
 
         public static string GetCurrentReport()
@@ -197,7 +191,7 @@ namespace ProfilerLib
             sb.AppendLine("SubtractedPerCallError = " + State.PerCallErrorToSubtract + Environment.NewLine + Environment.NewLine);
             foreach (var ep in cse.InitialCallSites.OrderByDescending(el => el.RunDuration))
             {
-                ReportGeneration.GetReportRecursive(sb, ep, 0, ep.RunDuration, ep.RunDuration);
+                ProfilerLib.ReportGeneration.GetReportRecursive(sb, ep, 0, ep.RunDuration, ep.RunDuration);
             }
             ReportGeneration.FreeLock(cse);
             return sb.ToString();
@@ -209,7 +203,7 @@ namespace ProfilerLib
             var sb = new StringBuilder();
             foreach (var ep in cse.InitialCallSites.OrderByDescending(el => el.RunDuration))
             {
-                ReportGeneration.GetReportRecursiveLineBased(line_consumer, sb, ep, 0, ep.RunDuration, ep.RunDuration);
+                ProfilerLib.ReportGeneration.GetReportRecursiveLineBased(line_consumer, sb, ep, 0, ep.RunDuration, ep.RunDuration);
             }
             ReportGeneration.FreeLock(cse);
         }

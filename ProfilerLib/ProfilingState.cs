@@ -174,6 +174,33 @@ namespace ProfilerLib
                     }
                 }
             }
+            if (autoSaveInterval > 0 && (autoSaveLastDate+TimeSpan.FromSeconds(autoSaveInterval) < DateTime.Now) )
+            {
+                do_autoSaveStatus();
+            }
+        }
+
+        private void do_autoSaveStatus()
+        {
+            // Todo: No stack frames here, as well...
+            autoSaveStream.SetLength(0);
+            var tw = new System.IO.StreamWriter(autoSaveStream);
+            tw.Write("SubtractedPerCallError = " + PerCallErrorToSubtract + Environment.NewLine + Environment.NewLine);
+            foreach (var ep in Data_EntryPoints.Values.OrderByDescending(el => el.RunDuration))
+            {
+                ProfilerLib.ReportGeneration.GetReportRecursiveLineBased(line=>tw.Write(line), new StringBuilder(), ep, 0, ep.RunDuration, ep.RunDuration);
+            }
+            autoSaveLastDate = DateTime.Now;
+        }
+
+        private DateTime autoSaveLastDate;
+        private System.IO.FileStream autoSaveStream;
+        private int autoSaveInterval;
+        public void SetAutoSaving(int interval, System.IO.FileStream fileSteam)
+        {
+            autoSaveInterval = interval;
+            autoSaveLastDate = DateTime.Now;
+            autoSaveStream = fileSteam;
         }
     }
 }

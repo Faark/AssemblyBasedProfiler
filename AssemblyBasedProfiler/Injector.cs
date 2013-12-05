@@ -35,6 +35,26 @@ namespace AssemblyBasedProfiller
             self.InsertAfter(after_target, (IEnumerable<Instruction>)instructions);
         }
 
+        public static MethodDefinition GetStaticConstructor(this TypeDefinition type)
+        {
+            var cctor = type.Methods.FirstOrDefault(meth => meth.Name == ".cctor");
+            if (cctor == null)
+            {
+                var voidRef = type.Module.Import(typeof(void));
+                var attributes = MethodAttributes.Static
+                                | MethodAttributes.SpecialName
+                                | MethodAttributes.RTSpecialName;
+                cctor = new MethodDefinition(".cctor", attributes, voidRef);
+                cctor.Body.GetILProcessor().Emit(OpCodes.Ret);
+                type.Methods.Add(cctor);
+            }
+            return cctor;
+        }
+        public static MethodDefinition GetStaticConstructor(this ModuleDefinition self)
+        {
+            return self.Types.Single(t => t.Name == "<Module>").GetStaticConstructor();
+        }
+
         public static Type ToType(this TypeReference self)
         {
             /*
@@ -164,23 +184,10 @@ namespace AssemblyBasedProfiller
                     );
             }
 
-        }
-        
+        }        
         public void Inject_RegisterMethodsAtType(IEnumerable<Tuple<int, MethodDefinition>> methodsToRegister, TypeDefinition typeToDoRegisteringIn)
         {
-            var cctor = typeToDoRegisteringIn.Methods.FirstOrDefault(meth => meth.Name == ".cctor");
-            if (cctor == null)
-            {
-                var voidRef = Module.Import(typeof(void));
-                var attributes = MethodAttributes.Static
-                                | MethodAttributes.SpecialName
-                                | MethodAttributes.RTSpecialName;
-                cctor = new MethodDefinition(".cctor", attributes, voidRef);
-                cctor.Body.GetILProcessor().Emit(OpCodes.Ret);
-                typeToDoRegisteringIn.Methods.Add(cctor);
-            }
-
-            Inject_RegisterMethods(methodsToRegister, cctor);
+            Inject_RegisterMethods(methodsToRegister, typeToDoRegisteringIn.GetStaticConstructor());
         }
         /*
         public void Inject_RegisterPrimaryMethods(IEnumerable<MethodDefinition> methodsToRegister)
@@ -310,6 +317,18 @@ namespace AssemblyBasedProfiller
                 );
 
             method.Body.OptimizeMacros();
+        }
+
+        public void Inject_SetupAutoSaving(int delay, string loc)
+        {
+            var con = Module.GetStaticConstructor();
+            var ilGen = con.Body.GetILProcessor();
+            ilGen.InsertBefore(
+                con.Body.Instructions.First(),
+                ilGen.Create(OpCodes.Ldc_I4, delay),
+                ilGen.Create(OpCodes.Ldstr, loc),
+                ilGen.Create(OpCodes.Call, Module.Import(new Action<int, string>(ProfilerLib.Profiler.SetAutoDataSaving).Method))
+                );
         }
 
         public void SaveAssembly()
