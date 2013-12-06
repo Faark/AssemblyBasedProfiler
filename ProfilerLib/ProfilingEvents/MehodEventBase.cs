@@ -5,7 +5,7 @@ using System.Text;
 
 namespace ProfilerLib
 {
-    public class MethodEventBase : IProfilingEvent
+    class MethodEventBase : IProfilingEvent
     {
         public long time;
         public int threadId;

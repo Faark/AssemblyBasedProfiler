@@ -6,7 +6,7 @@ using System.Threading;
 
 namespace ProfilerLib
 {
-    public class CaptureStateEvent : IProfilingEvent
+    class CaptureStateEvent : IProfilingEvent
     {
         /*
          * This one is critical. I have to suspend the processing thread, but would prefer to generate the string in the worker thread for now (exception handling...)

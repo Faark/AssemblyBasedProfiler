@@ -196,15 +196,11 @@ namespace AssemblyBasedProfiller
             Inject_RegisterMethodsAtType(methodsToRegister, moduleConstructionType);
         }
         */
-        public void Inject_AddProfileCalls(int methodId, MethodDefinition method)
+        public void Inject_AddProfileCalls(int methodId, bool useLeaveEx, MethodDefinition method)
         {
             method.Body.SimplifyMacros();
             var meth_enter = Module.Import(new Action<Int32>(ProfilerLib.Profiler.Enter).Method);
-//#if DEBUG
-//            var meth_leave = Module.Import(new Action<Int32>(ProfilerLib.Profiler.LeaveDetailed).Method);
-//#else
-            var meth_leave = Module.Import(new Action(ProfilerLib.Profiler.Leave).Method);
-//#endif
+            var meth_leave = Module.Import(useLeaveEx ? new Action<Int32>(ProfilerLib.Profiler.LeaveEx).Method : new Action(ProfilerLib.Profiler.Leave).Method);
 
             var ilGen = method.Body.GetILProcessor();
 
@@ -290,15 +286,21 @@ namespace AssemblyBasedProfiller
             firstInstructionAfterProfiling.OpCode = OpCodes.Leave;
             firstInstructionAfterProfiling.Operand = readdedFirstInstructionAfterHandler;
             Instruction handlerFirstInstruction;
-            ilGen.InsertAfter(firstInstructionAfterProfiling,
-//#if DEBUG
-//                handlerFirstInstruction = ilGen.Create(OpCodes.Ldc_I4, methodId),
-//                ilGen.Create(OpCodes.Call, meth_leave),
-//#else
-                handlerFirstInstruction = ilGen.Create(OpCodes.Call, meth_leave),
-//#endif
-                ilGen.Create(OpCodes.Endfinally)
-                );
+            if (useLeaveEx)
+            {
+                ilGen.InsertAfter(firstInstructionAfterProfiling,
+                    handlerFirstInstruction = ilGen.Create(OpCodes.Ldc_I4, methodId),
+                    ilGen.Create(OpCodes.Call, meth_leave),
+                    ilGen.Create(OpCodes.Endfinally)
+                    );
+            }
+            else
+            {
+                ilGen.InsertAfter(firstInstructionAfterProfiling,
+                    handlerFirstInstruction = ilGen.Create(OpCodes.Call, meth_leave),
+                    ilGen.Create(OpCodes.Endfinally)
+                    );
+            }
 
             var handler = new ExceptionHandler(ExceptionHandlerType.Finally)
             {

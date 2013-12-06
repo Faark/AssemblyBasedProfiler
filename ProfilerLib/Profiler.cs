@@ -12,28 +12,37 @@ namespace ProfilerLib
 {
     /*
      * 
+     * How does it work?
+     * * add text*
+     * 
+     * 
+     * Todos:
+     * - add thread statistics (should be easy to add to profilingstate); but not very useful for ksp & we need a more general data collection method anyway...
+     * 
+     * 
+     */
+    /*
+     * 
+     * Just dumping some thougths:
+     * 
      * Todo: Sleep about how we want to handle methods.
      * - Using PTR would be awesome, since it allows to safly handle multiple assemblies.
-     * - We NEED a way to get MethodInfos.
-     * - Stupid but safe way: Generate a hidden dummy somewhere, that does nothing but to register all called methods.
-     * - Slow and not more reliable method: Flag all methods with an attribute & register them via reflection / check all method addresses...
-     * - Static constructor into a type... and register them there. It would only register methods for used objects... 
+     * => Turns out to be .... "complicated" on generics
      * 
-     * http://stackoverflow.com/questions/459560/initialize-library-on-assembly-load
-     * - <Module> class... not distributed to thousands of types, though its not lazy-initialized?
+     * - Methods are currently registerd in the classes static constructor. Thats fine. We can't register a static constructor, since its not accessible (though i think that was PTR as well), but they are only executed once anyway
+     *
+     * - Another slow and likely not more reliable method: Flag all methods with an attribute & register them via reflection / check all method addresses...
      * 
-     * => Static constructor. Benefits:
-     * - We got them all, for sure and any time.
-     * - Less initialization-impact.
-     * - Allows to profile static constructors.
-     * 
-     * =>
-     * 
-     * What about a 2 lvl system? Register static constructors on Module initialization, but members to the static constructor?
      */
 #warning Todo: Timeouts for all Waits?
 
 
+    /// <summary>
+    /// The Profiler class is the public interface of this profiler.
+    /// </summary>
+    /// <remarks>
+    /// The user of this profiler should not have to touch anything but this static interface.
+    /// </remarks>
     public static class Profiler
     {
 
@@ -76,6 +85,7 @@ namespace ProfilerLib
             t.Start();
         }
         static ProfilingState State;
+        static System.IO.FileStream autoSaveStream;
         static void ProfConsumerThread()
         {
             try
@@ -91,11 +101,44 @@ namespace ProfilerLib
                 Exception = err;
             }
         }
+        static void checkNotCrashed()
+        {
+            if (Exception != null)
+            {
+                throw new InvalidOperationException("Profiler thread is crashed, cannot reset data.", Exception);
+            }
+        }
+        static class ReportGeneration
+        {
+            public static CaptureStateEvent AquireLock()
+            {
+                checkNotCrashed();
+                var cse = new CaptureStateEvent();
+                unprocessedEvents.Enqueue(cse);
+                ewh.Set();
+                while (!cse.OnThreadStoppedAndDataSet.WaitOne(TimeSpan.FromMilliseconds(50)))
+                {
+                    checkNotCrashed();
+                }
+                return cse;
+            }
+            public static void FreeLock(CaptureStateEvent cse)
+            {
+                cse.OnReadyToResume.Set();
+            }
+
+        }
+
+
+        /// <summary>
+        /// In case the profiler thread has crashed will this contain the correspondig exception.
+        /// </summary>
+        public static Exception Exception { get; private set; }
 
         public static int AutoDataSavingInterval { get; private set; }
         public static string AutoDataSavingLocation { get; private set; }
 
-        static System.IO.FileStream autoSaveStream;
+
         public static void SetAutoDataSaving(int secs_between, string loc)
         {
             AutoDataSavingInterval = Math.Max(secs_between, 0);
@@ -123,6 +166,11 @@ namespace ProfilerLib
             SetAutoDataSaving(secs_between, AutoDataSavingLocation);
         }
 
+        /// <summary>
+        /// Enter(methodId) is called by a method when it is entered.
+        /// </summary>
+        /// <param name="methodId"></param>
+        /// <remarks>It adds the acording data to the profilers internal event queue.</remarks>
         public static void Enter(int methodId)
         {
             unprocessedEvents.Enqueue(new EnterMethodEvent()
@@ -133,18 +181,6 @@ namespace ProfilerLib
             });
             ewh.Set();
         }
-/*#if DEBUG
-        public static void LeaveDetailed(int methodId)
-        {
-            unprocessedEvents.Enqueue(new LeaveMethodEvent()
-            {
-                methodId = methodId,
-                threadId = System.Threading.Thread.CurrentThread.ManagedThreadId,
-                time = Stopwatch.GetTimestamp()
-            });
-            ewh.Set();
-        }
-#else*/
         public static void Leave()
         {
             unprocessedEvents.Enqueue(new LeaveMethodEvent()
@@ -154,36 +190,21 @@ namespace ProfilerLib
             });
             ewh.Set();
         }
-//#endif
-        static void CheckNotCrashed()
+        public static void LeaveEx(int methodId)
         {
-            if (Exception != null)
+            unprocessedEvents.Enqueue(new LeaveMethodExEvent()
             {
-                throw new InvalidOperationException("Profiler thread is crashed, cannot reset data.", Exception);
-            }
+                MethodId = methodId,
+                threadId = System.Threading.Thread.CurrentThread.ManagedThreadId,
+                time = Stopwatch.GetTimestamp()
+            });
+            ewh.Set();
         }
-
-        static class ReportGeneration
-        {
-            public static CaptureStateEvent AquireLock()
-            {
-                CheckNotCrashed();
-                var cse = new CaptureStateEvent();
-                unprocessedEvents.Enqueue(cse);
-                ewh.Set();
-                while (!cse.OnThreadStoppedAndDataSet.WaitOne(TimeSpan.FromMilliseconds(50)))
-                {
-                    CheckNotCrashed();
-                }
-                return cse;
-            }
-            public static void FreeLock(CaptureStateEvent cse)
-            {
-                cse.OnReadyToResume.Set();
-            }
-
-        }
-
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <returns></returns>
+        /// <remarks>This method is blocking. It will wait </remarks>
         public static string GetCurrentReport()
         {
             var cse = ReportGeneration.AquireLock();
@@ -196,6 +217,10 @@ namespace ProfilerLib
             ReportGeneration.FreeLock(cse);
             return sb.ToString();
         }
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="line_consumer"></param>
         public static void GetCurrentReport(Action<string> line_consumer)
         {
             var cse = ReportGeneration.AquireLock();
@@ -207,16 +232,16 @@ namespace ProfilerLib
             }
             ReportGeneration.FreeLock(cse);
         }
+
+        /// <summary>
+        /// Requests the profiling data to be cleared/reset.
+        /// </summary>
+        /// <remarks>It just adds the request to the profilers internal event queue.</remarks>
         public static void ClearProfilingData()
         {
-            CheckNotCrashed();
+            checkNotCrashed();
             unprocessedEvents.Enqueue(new ResetStateEvent());
             ewh.Set();
         }
-
-        /// <summary>
-        /// In case the profiler thread crashed will this contain the correspondig exception.
-        /// </summary>
-        public static Exception Exception { get; private set; }
     }
 }

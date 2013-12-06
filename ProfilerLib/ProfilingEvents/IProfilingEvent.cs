@@ -5,7 +5,7 @@ using System.Text;
 
 namespace ProfilerLib
 {
-    public interface IProfilingEvent
+    interface IProfilingEvent
     {
     }
 }

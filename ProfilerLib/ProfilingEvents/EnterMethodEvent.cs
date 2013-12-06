@@ -6,7 +6,7 @@ using System.Text;
 namespace ProfilerLib
 {
 
-    public class EnterMethodEvent : MethodEventBase
+    class EnterMethodEvent : MethodEventBase
     {
         public int methodId;
 

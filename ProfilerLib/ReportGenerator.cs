@@ -14,7 +14,7 @@ namespace ProfilerLib
             var globalShare = (double)site.RunDuration / (double)timeTotal;
             var localShare = (double)site.RunDuration / (double)timeParent;
             trg.Append(' ', indent * 2);
-            MethodLibrary.GetText(site.Method, trg);
+            MethodLibrary.GetText(site.MethodId, trg);
             trg.Append(": ")
                 .Append(site.NumberOfCalls)
                 .Append(" calls, runtime: ");

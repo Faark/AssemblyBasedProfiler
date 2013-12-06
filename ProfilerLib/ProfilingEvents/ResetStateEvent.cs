@@ -6,7 +6,8 @@ using System.Text;
 namespace ProfilerLib
 {
 
-    public class ResetStateEvent : IProfilingEvent {
+    class ResetStateEvent : IProfilingEvent
+    {
         public override string ToString()
         {
             return "ResetStateEvent";

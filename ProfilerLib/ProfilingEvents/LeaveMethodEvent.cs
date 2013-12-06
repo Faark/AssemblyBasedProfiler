@@ -5,15 +5,19 @@ using System.Text;
 
 namespace ProfilerLib
 {
-    public class LeaveMethodEvent : MethodEventBase
+    class LeaveMethodEvent : MethodEventBase
     {
-        //#if DEBUG
-        //        public int methodId;
-        //#endif
         public override string ToString()
         {
             return "LeaveMethodEvent{Thread: " + threadId + ", Time: " + time + "}";
-            //return "LeaveMethodEvent{Method: " + methodId + ", Thread: " + threadId + ", Time: " + time + "}";
+        }
+    }
+    class LeaveMethodExEvent : LeaveMethodEvent
+    {
+        public int MethodId;
+        public override string ToString()
+        {
+            return "LeaveMethodEvent{Method: " + MethodId + ", Thread: " + threadId + ", Time: " + time + "}";
         }
     }
 }

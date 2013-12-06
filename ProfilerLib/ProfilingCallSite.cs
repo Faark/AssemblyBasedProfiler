@@ -5,7 +5,7 @@ using System.Text;
 
 namespace ProfilerLib
 {
-    public class ProfilingCallSite
+    class ProfilingCallSite
     {
         /// <summary>
         /// 0-MaxInt = Method in  MethodLibrary
@@ -13,9 +13,10 @@ namespace ProfilerLib
         /// (-Int - 1) = Recursive call?
         /// Update: No recursion "detection" for now...
         /// </summary>
-        public int Method;
+        public int MethodId;
         public int NumberOfCalls;
         public long RunDuration;
+        //public long SubtractedRecordingOffset; todo: think about this.
         public Dictionary<int, ProfilingCallSite> SubCalls = new Dictionary<int, ProfilingCallSite>();
         public ProfilingCallSite Parent;
     }

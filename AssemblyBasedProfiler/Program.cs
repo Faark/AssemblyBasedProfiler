@@ -22,6 +22,11 @@ namespace AssemblyBasedProfiller
             //var fullArg = @"C:\Users\Faark\Documents\GitHub\AssemblyBasedProfiler\TestApp\bin\Debug\TestLib.dll";
             var autoSaveEvery = 30;
             var autoSaveTo = "profiling.txt";
+            var verifyLeaves = false;
+            var methodIdRangeMin = int.MinValue;
+            var methodIdRangeMax = int.MaxValue;
+
+
             if (fullArg != "" && !System.IO.File.Exists(fullArg))
             {
                 Console.WriteLine("Specified file does not exist: " + fullArg);
@@ -60,7 +65,7 @@ namespace AssemblyBasedProfiller
                     int methodId;
                     do
                     {
-                        methodId = rand.Next(int.MinValue, int.MaxValue);
+                        methodId = rand.Next(methodIdRangeMin, methodIdRangeMax);
                     } while (!sets.Add(methodId));
 
                     Console.WriteLine("  Method: " + meth.Name);
@@ -74,7 +79,7 @@ namespace AssemblyBasedProfiller
                     }
                     else
                     {
-                        injector.Inject_AddProfileCalls(methodId, meth);
+                        injector.Inject_AddProfileCalls(methodId, verifyLeaves, meth);
                         locals.Add(Tuple.Create(methodId, meth));
                     }
                 }
