@@ -17,6 +17,7 @@ namespace ProfilerLib
      * 
      * 
      * Todos:
+     * - somehow prevent duplicate prof injection...
      * - add thread statistics (should be easy to add to profilingstate); but not very useful for ksp & we need a more general data collection method anyway...
      * 
      * 

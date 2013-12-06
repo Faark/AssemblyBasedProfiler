@@ -9,6 +9,9 @@ using Mono.Cecil.Rocks;
 
 namespace AssemblyBasedProfiller
 {
+
+    // Todo: meth.Body.Optimize/SimplyfyMacros() have to be reconsidered / may generalized?
+
     public static class InjectorExtensions
     {
         public static void InsertBefore(this ILProcessor self, Instruction before, IEnumerable<Instruction> instructions)
@@ -144,6 +147,9 @@ namespace AssemblyBasedProfiller
             return cpy;
         }
     }
+    /// <summary>
+    /// This class takes care of the actual IL manipulation.
+    /// </summary>
     public class Injector
     {
         public string File { get; private set; }
@@ -167,6 +173,9 @@ namespace AssemblyBasedProfiller
             //var meth_tokenToMethodBase = Module.Import(new Func<RuntimeMethodHandle, System.Reflection.MethodBase>(System.Reflection.MethodBase.GetMethodFromHandle).Method);
             var meth_tokenToMethodBase = Module.Import(new Func<RuntimeMethodHandle, RuntimeTypeHandle, System.Reflection.MethodBase>(System.Reflection.MethodBase.GetMethodFromHandle).Method);
             var meth_addMethodToLibrary = Module.Import(new Action<Int32, System.Reflection.MethodBase>(ProfilerLib.MethodLibrary.Register).Method);
+
+            methodToDoRegisteringIn.Body.SimplifyMacros();
+
             var ilGen = methodToDoRegisteringIn.Body.GetILProcessor();
 
             var oldFirst = methodToDoRegisteringIn.Body.Instructions.First();
@@ -184,18 +193,12 @@ namespace AssemblyBasedProfiller
                     );
             }
 
+            methodToDoRegisteringIn.Body.OptimizeMacros();
         }        
         public void Inject_RegisterMethodsAtType(IEnumerable<Tuple<int, MethodDefinition>> methodsToRegister, TypeDefinition typeToDoRegisteringIn)
         {
             Inject_RegisterMethods(methodsToRegister, typeToDoRegisteringIn.GetStaticConstructor());
         }
-        /*
-        public void Inject_RegisterPrimaryMethods(IEnumerable<MethodDefinition> methodsToRegister)
-        {
-            var moduleConstructionType = Assembly.MainModule.Types.Single(t => t.Name == "<Module>");
-            Inject_RegisterMethodsAtType(methodsToRegister, moduleConstructionType);
-        }
-        */
         public void Inject_AddProfileCalls(int methodId, bool useLeaveEx, MethodDefinition method)
         {
             method.Body.SimplifyMacros();
@@ -208,7 +211,7 @@ namespace AssemblyBasedProfiller
 
             // At first we add out try{...}finally{Leave();} around everything. Ret appears to always be the last cmd, so there are 3 possible situations:
             // - return void. Easy, just end the finally block right in front of this ret.
-            // - ldloc; return; Same as above, but this time we have to end it before both commands
+            // - ldloc; return; Same as above, but this time we have to end it before both commands (turns out there might be jumps to ret directly, that have to be caught as well!)
             // - return value without ldloc... this is tricky. I might have to create a new local and store it in there....
             Instruction firstInstructionAfterProfiling;
             VariableDefinition localToStoreResult = null;
@@ -324,6 +327,7 @@ namespace AssemblyBasedProfiller
         public void Inject_SetupAutoSaving(int delay, string loc)
         {
             var con = Module.GetStaticConstructor();
+            con.Body.SimplifyMacros();
             var ilGen = con.Body.GetILProcessor();
             ilGen.InsertBefore(
                 con.Body.Instructions.First(),
@@ -331,11 +335,15 @@ namespace AssemblyBasedProfiller
                 ilGen.Create(OpCodes.Ldstr, loc),
                 ilGen.Create(OpCodes.Call, Module.Import(new Action<int, string>(ProfilerLib.Profiler.SetAutoDataSaving).Method))
                 );
+            con.Body.OptimizeMacros();
         }
 
-        public void SaveAssembly()
+        public void SaveAssembly(bool create_backup)
         {
-            System.IO.File.Copy(File, File + ".backup", true);
+            if (create_backup)
+            {
+                System.IO.File.Copy(File, File + ".backup", true);
+            }
             Assembly.Write(File);
         }
     }
