@@ -49,6 +49,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="FileHash.cs" />
     <Compile Include="Injector.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="ProgramArguments.cs" />

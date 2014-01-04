@@ -19,6 +19,8 @@ namespace ProfilerLib
         public static void GetText(int fromAddress, StringBuilder target)
         {
             // todo: add arguments, generics and sth like that if we don't switch to a 3rd-party-ui (slimtune?)
+            // - Generic classes are handled automatically by type.FullName. We don't atm identify generic methods, so we cant name them
+            // - Adding a bunch of args to pretty much everything would look shitty as well... at least atm in that text base report
             var method = GetInfo(fromAddress);
             target
                 .Append((method == null || method.DeclaringType == null) ? "UNKNOWN_TYPE" : method.DeclaringType.FullName)

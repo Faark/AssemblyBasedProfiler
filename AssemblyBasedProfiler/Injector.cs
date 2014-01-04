@@ -62,6 +62,8 @@ namespace AssemblyBasedProfiller
         {
             /*
              * Warning: The following method is reused from an old project. No idea how reliable it is...
+             * 
+             * Also this method cant handle types of non-loadeed assemblies!
              */
 
 
@@ -152,10 +154,11 @@ namespace AssemblyBasedProfiller
     /// </summary>
     public class Injector
     {
-        public string File { get; private set; }
+        public System.IO.FileInfo File { get; private set; }
+        public string BackupFile { get { return File.FullName + ".backup"; } }
         public AssemblyDefinition Assembly { get; private set; }
         public ModuleDefinition Module { get; private set; }
-        public Injector(string file)
+        public Injector(System.IO.FileInfo file)
         {
             /*var assembly_resolver = new DefaultAssemblyResolver();
             assembly_resolver.AddSearchDirectory(assembly_file.DirectoryName);
@@ -164,21 +167,30 @@ namespace AssemblyBasedProfiller
                 new ReaderParameters() { AssemblyResolver = assembly_resolver }
                 );*/
             File = file;
-            Assembly = AssemblyDefinition.ReadAssembly(file);
+            Assembly = AssemblyDefinition.ReadAssembly(file.FullName);
             Module = Assembly.MainModule;
         }
 
-        public void Inject_RegisterMethods(IEnumerable<Tuple<int, MethodDefinition>> methodsToRegister, MethodDefinition methodToDoRegisteringIn)
+        public bool Check_HasModifiedMarker()
+        {
+            return Module.GetStaticConstructor().DeclaringType.Fields.Any(f => f.Name == "IsProfilingAssembly" && f.IsStatic == false && f.FieldType.FullName == "System.Boolean");
+        }
+        public void Inject_ModifiedMarker()
+        {
+            Module.GetStaticConstructor().DeclaringType.Fields.Add(new FieldDefinition("IsProfilingAssembly", FieldAttributes.Public, Module.Import(typeof(bool))));
+        }
+
+        public void Inject_RegisterMethods(IEnumerable<Tuple<int, MethodDefinition>> methodsToRegister, MethodDefinition methodToPlaceRegisteringIn)
         {
             //var meth_tokenToMethodBase = Module.Import(new Func<RuntimeMethodHandle, System.Reflection.MethodBase>(System.Reflection.MethodBase.GetMethodFromHandle).Method);
             var meth_tokenToMethodBase = Module.Import(new Func<RuntimeMethodHandle, RuntimeTypeHandle, System.Reflection.MethodBase>(System.Reflection.MethodBase.GetMethodFromHandle).Method);
             var meth_addMethodToLibrary = Module.Import(new Action<Int32, System.Reflection.MethodBase>(ProfilerLib.MethodLibrary.Register).Method);
 
-            methodToDoRegisteringIn.Body.SimplifyMacros();
+            methodToPlaceRegisteringIn.Body.SimplifyMacros();
 
-            var ilGen = methodToDoRegisteringIn.Body.GetILProcessor();
+            var ilGen = methodToPlaceRegisteringIn.Body.GetILProcessor();
 
-            var oldFirst = methodToDoRegisteringIn.Body.Instructions.First();
+            var oldFirst = methodToPlaceRegisteringIn.Body.Instructions.First();
 
             foreach (var meth in methodsToRegister)
             {
@@ -193,11 +205,11 @@ namespace AssemblyBasedProfiller
                     );
             }
 
-            methodToDoRegisteringIn.Body.OptimizeMacros();
+            methodToPlaceRegisteringIn.Body.OptimizeMacros();
         }        
-        public void Inject_RegisterMethodsAtType(IEnumerable<Tuple<int, MethodDefinition>> methodsToRegister, TypeDefinition typeToDoRegisteringIn)
+        public void Inject_RegisterMethodsAtType(IEnumerable<Tuple<int, MethodDefinition>> methodsToRegister, TypeDefinition typeToPlaceRegisteringIn)
         {
-            Inject_RegisterMethods(methodsToRegister, typeToDoRegisteringIn.GetStaticConstructor());
+            Inject_RegisterMethods(methodsToRegister, typeToPlaceRegisteringIn.GetStaticConstructor());
         }
         public void Inject_AddProfileCalls(int methodId, bool useLeaveEx, MethodDefinition method)
         {
@@ -342,9 +354,9 @@ namespace AssemblyBasedProfiller
         {
             if (create_backup)
             {
-                System.IO.File.Copy(File, File + ".backup", true);
+                File.CopyTo(BackupFile, true);
             }
-            Assembly.Write(File);
+            Assembly.Write(File.FullName);
         }
     }
 }

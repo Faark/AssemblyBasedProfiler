@@ -17,7 +17,6 @@ namespace ProfilerLib
      * 
      * 
      * Todos:
-     * - somehow prevent duplicate prof injection...
      * - add thread statistics (should be easy to add to profilingstate); but not very useful for ksp & we need a more general data collection method anyway...
      * 
      * 
@@ -35,7 +34,7 @@ namespace ProfilerLib
      * - Another slow and likely not more reliable method: Flag all methods with an attribute & register them via reflection / check all method addresses...
      * 
      */
-#warning Todo: Timeouts for all Waits?
+#warning Todo: Timeouts/Finallys for all Waits?
 
 
     /// <summary>
@@ -58,7 +57,7 @@ namespace ProfilerLib
                 Enter(0);
                 try
                 {
-                    // some kind of "Nop" here?
+                    // some kind of "Nop" here? Am afraid of optimizations...
                 }
                 finally
                 {
