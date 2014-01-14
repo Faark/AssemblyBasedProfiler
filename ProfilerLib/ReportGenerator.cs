@@ -8,7 +8,7 @@ namespace ProfilerLib
 {
     static class ReportGeneration
     {
-#warning we miss current stack frames... that might lead to invalid data /NaNs or worse..
+//#warning we miss current stack frames... that might lead to invalid data /NaNs or worse..
         static void GetLine(StringBuilder trg, ProfilingCallSite site, int indent, long timeParent, long timeTotal)
         {
             var globalShare = (double)site.RunDuration / (double)timeTotal;

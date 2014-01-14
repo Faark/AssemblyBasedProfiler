@@ -127,10 +127,13 @@ namespace AssemblyBasedProfiller
         {
             /*
             args = new[]{
-                @"C:\ksp_rt\GameData\RemoteTech2\Plugins\RemoteTech2.dll",
+                @"C:\ksp_rtPerf\GameData",
+                "-perfksp"
+                //@"C:\Users\Faark\Documents\GitHub\AssemblyBasedProfiler\TestApp\bin\Debug\TestApp.exe",
+                //@"C:\ksp_rt\GameData\RemoteTech2\Plugins\RemoteTech2.dll",
                 //@"C:\ksp_rtOld\GameData\MechJeb2\Plugins\MechJeb2.dll",
                 //@"C:\Users\Faark\Documents\GitHub\AssemblyBasedProfiler\TestApp\bin\Debug\TestLib.dll",
-                "-as"
+                //"-as"
             };*/
             var arguments = ProgramArguments.ProcessArgs(args);
             if (arguments == null)

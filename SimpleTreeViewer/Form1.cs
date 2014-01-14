@@ -50,6 +50,10 @@ namespace SimpleTree
                     stack.Push(Tuple.Create(pos, node.Nodes));
                 }
                 treeView1.ResumeLayout();
+                Text = new System.IO.FileInfo(openFileDialog1.FileName).Name + " - SimpleTreeViewer";
+                WindowState = FormWindowState.Minimized;
+                WindowState = FormWindowState.Normal;
+                treeView1.Focus();
             }
             else
             {

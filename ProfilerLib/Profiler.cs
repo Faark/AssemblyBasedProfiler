@@ -12,6 +12,14 @@ namespace ProfilerLib
 {
     /*
      * 
+     * 
+     * 
+     * 
+     * TODO: Crashing consumer thread goes unnoticed on autosaving... except memory consumption => crash.
+     * Think about switching to a different queue, maybe an unmanged list that we can check for "full" => check exception?
+     * For now we simply log a crash into the autosave-file
+     * 
+     * 
      * How does it work?
      * * add text*
      * 
@@ -85,7 +93,6 @@ namespace ProfilerLib
             t.Start();
         }
         static ProfilingState State;
-        static System.IO.FileStream autoSaveStream;
         static void ProfConsumerThread()
         {
             try
@@ -98,6 +105,16 @@ namespace ProfilerLib
             }
             catch (Exception err)
             {
+                if (AutoDataSavingInterval > 0)
+                {
+                    using (var tw = new System.IO.FileInfo(AutoDataSavingLocation).AppendText())
+                    {
+                        tw.WriteLine();
+                        tw.WriteLine();
+                        tw.WriteLine("Profiler thread crashed:");
+                        tw.WriteLine(err.ToString());
+                    }
+                }
                 Exception = err;
             }
         }
@@ -139,25 +156,28 @@ namespace ProfilerLib
         public static string AutoDataSavingLocation { get; private set; }
 
 
+        private static void ensureFileIsValid(System.IO.FileInfo file)
+        {
+            using (var tw = file.CreateText())
+            {
+                tw.WriteLine("Profiler initialized.");
+            }
+        }
         public static void SetAutoDataSaving(int secs_between, string loc)
         {
             AutoDataSavingInterval = Math.Max(secs_between, 0);
             if (secs_between > 0)
             {
+                var fi = new System.IO.FileInfo(loc);
                 if (loc != AutoDataSavingLocation)
                 {
-                    if (autoSaveStream != null)
-                        autoSaveStream.Close();
-                    autoSaveStream = System.IO.File.Open(loc, System.IO.FileMode.OpenOrCreate, System.IO.FileAccess.Write);
+                    ensureFileIsValid(fi);
                 }
-                State.SetAutoSaving(secs_between, autoSaveStream);
+                State.SetAutoSaving(secs_between, fi);
             }
             else
             {
                 State.SetAutoSaving(0, null);
-                if (autoSaveStream != null)
-                    autoSaveStream.Close();
-                autoSaveStream = null;
             }
             AutoDataSavingLocation = loc;
         }

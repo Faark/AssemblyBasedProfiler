@@ -193,6 +193,10 @@ namespace AssemblyBasedProfiller
                     PathIsDirectory = true;
                     PathProcessSubs = true;
                     break;
+                case "-KSP":
+                case "/KSP":
+                case "-KSPPERF":
+                case "/KSPPERF":
                 case "-PERFKSP":
                 case "/PERFKSP":
                     PathIsDirectory = true;
@@ -209,6 +213,8 @@ namespace AssemblyBasedProfiller
                     break;
                 case "-UNDOKSP":
                 case "/UNDOKSP":
+                case "-KSPUNDO":
+                case "/KSPUNDO":
                     PathIsDirectory = true;
                     PathProcessSubs = true;
                     PlaceOrRemoveDependencies = true;

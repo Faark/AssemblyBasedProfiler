@@ -9,9 +9,6 @@ using Mono.Cecil.Rocks;
 
 namespace AssemblyBasedProfiller
 {
-
-    // Todo: meth.Body.Optimize/SimplyfyMacros() have to be reconsidered / may generalized?
-
     public static class InjectorExtensions
     {
         public static void InsertBefore(this ILProcessor self, Instruction before, IEnumerable<Instruction> instructions)
@@ -158,6 +155,9 @@ namespace AssemblyBasedProfiller
         public string BackupFile { get { return File.FullName + ".backup"; } }
         public AssemblyDefinition Assembly { get; private set; }
         public ModuleDefinition Module { get; private set; }
+        protected MethodReference Method_ProfilerEnter;
+        protected MethodReference Method_ProfilerLeave;
+        protected MethodReference Method_ProfilerLeaveEx;
         public Injector(System.IO.FileInfo file)
         {
             /*var assembly_resolver = new DefaultAssemblyResolver();
@@ -169,6 +169,11 @@ namespace AssemblyBasedProfiller
             File = file;
             Assembly = AssemblyDefinition.ReadAssembly(file.FullName);
             Module = Assembly.MainModule;
+
+
+            Method_ProfilerEnter = Module.Import(new Action<Int32>(ProfilerLib.Profiler.Enter).Method);
+            Method_ProfilerLeave = Module.Import(new Action(ProfilerLib.Profiler.Leave).Method);
+            Method_ProfilerLeaveEx = Module.Import(new Action<Int32>(ProfilerLib.Profiler.LeaveEx).Method);
         }
 
         public bool Check_HasModifiedMarker()
@@ -211,128 +216,121 @@ namespace AssemblyBasedProfiller
         {
             Inject_RegisterMethods(methodsToRegister, typeToPlaceRegisteringIn.GetStaticConstructor());
         }
-        public void Inject_AddProfileCalls(int methodId, bool useLeaveEx, MethodDefinition method)
+
+        /// <summary>
+        /// Wrapping a method in try{...}finally{Leave();} consists of quite a few challanges... this class takes care of them
+        /// </summary>
+        class ExceptionHandlerWrapper
         {
-            method.Body.SimplifyMacros();
-            var meth_enter = Module.Import(new Action<Int32>(ProfilerLib.Profiler.Enter).Method);
-            var meth_leave = Module.Import(useLeaveEx ? new Action<Int32>(ProfilerLib.Profiler.LeaveEx).Method : new Action(ProfilerLib.Profiler.Leave).Method);
+            MethodDefinition method;
+            ILProcessor ilGen;
 
-            var ilGen = method.Body.GetILProcessor();
-
-            var voidReturn = method.ReturnType.IsVoid();
-
-            // At first we add out try{...}finally{Leave();} around everything. Ret appears to always be the last cmd, so there are 3 possible situations:
-            // - return void. Easy, just end the finally block right in front of this ret.
-            // - ldloc; return; Same as above, but this time we have to end it before both commands (turns out there might be jumps to ret directly, that have to be caught as well!)
-            // - return value without ldloc... this is tricky. I might have to create a new local and store it in there....
-            Instruction firstInstructionAfterProfiling;
-            VariableDefinition localToStoreResult = null;
-            /*if (method.Name == "get_SignalProcessor" && method.DeclaringType.Name == "VesselSatellite")
+            Instruction FirstInstructionAfterWrappedCode;
+            public ExceptionHandlerWrapper(MethodDefinition method)
             {
-                Console.WriteLine("gSP");
-            }*/
-            if (voidReturn)
-            {
-                firstInstructionAfterProfiling = method.Body.Instructions.Last();
+                this.method = method;
+                this.ilGen = method.Body.GetILProcessor();
             }
-            else if (
-               (method.Body.Instructions.Count >= 2) &&
-               (new[]{
-                    OpCodes.Ldloc, 
-                    OpCodes.Ldloc_0, 
-                    OpCodes.Ldloc_1, 
-                    OpCodes.Ldloc_2, 
-                    OpCodes.Ldloc_3, 
-                    OpCodes.Ldloc_S
-                }.Contains(method.Body.Instructions.Reverse().Skip(1).First().OpCode)) &&
-               !method.Body.Instructions.Any(instr => instr.Operand == method.Body.Instructions.Last())
-               )
-            {
-                firstInstructionAfterProfiling = method.Body.Instructions.Reverse().Skip(1).First();
-            }
-            else
-            {
-                localToStoreResult = new VariableDefinition(method.ReturnType);
-                method.Body.Variables.Add(localToStoreResult);
-                var cpy = method.Body.Instructions.Last().ReplaceBy(OpCodes.Stloc, localToStoreResult);
-                ilGen.InsertAfter(
-                    method.Body.Instructions.Last(),
-                    firstInstructionAfterProfiling = ilGen.Create(OpCodes.Ldloc, localToStoreResult),
-                    ilGen.Create(OpCodes.Ret)
-                    );
-                //throw new NotImplementedException("Difficult case not yet implemented. Though happily the compiler tend to not use it anyway :) ");
-            }
-            // problem: lastInstruction is most likely used as jump target. So we better not move it but instead re-moddle it into a leave and re-add the last instruction
 
-
-
-            //Instruction lastInstr = null;
-            foreach (var instr in method.Body.Instructions.TakeWhile(el => el != firstInstructionAfterProfiling).ToList())
+            public void PrepareAndGetLastWrappedInstruction()
             {
-                // assumption (verify?): There can only be rets outside of any ExceptionHandlers, since they would require a leave!
-                // anyway, if there isn't already an return local set we have to inject it...
-                if (instr.OpCode == OpCodes.Ret)
+                VariableDefinition retStorage = null;
+                foreach (var instruction in method.Body.Instructions.ToList())
                 {
-                    var retCmd = instr;
-                    if (!voidReturn)
+                    if (instruction.OpCode == OpCodes.Ret)
                     {
-                        if (localToStoreResult == null)
+                        if (FirstInstructionAfterWrappedCode == null)
                         {
-                            localToStoreResult = new VariableDefinition(method.ReturnType);
-                            method.Body.Variables.Add(localToStoreResult);
-                            ilGen.InsertBefore(
-                                method.Body.Instructions.Last(),
-                                ilGen.Create(OpCodes.Stloc, localToStoreResult),
-                                firstInstructionAfterProfiling = ilGen.Create(OpCodes.Ldloc, localToStoreResult)
-                                );
+                            if (method.ReturnType.IsVoid())
+                            {
+                                ilGen.InsertAfter(
+                                    method.Body.Instructions.Last(),
+                                    FirstInstructionAfterWrappedCode = ilGen.Create(OpCodes.Ret)
+                                    );
+                            }
+                            else
+                            {
+                                retStorage = new VariableDefinition(method.ReturnType);
+                                method.Body.Variables.Add(retStorage);
+                                ilGen.InsertAfter(
+                                    method.Body.Instructions.Last(),
+                                    FirstInstructionAfterWrappedCode = ilGen.Create(OpCodes.Ldloc, retStorage),
+                                    ilGen.Create(OpCodes.Ret)
+                                    );
+                            }
                         }
-                        var cpy = instr.ReplaceBy(OpCodes.Stloc, localToStoreResult);
-                        ilGen.InsertAfter(instr, cpy);
-                        retCmd = cpy;
+                        if (method.ReturnType.IsVoid())
+                        {
+                            instruction.OpCode = OpCodes.Leave;
+                            instruction.Operand = FirstInstructionAfterWrappedCode;
+                        }
+                        else
+                        {
+                            instruction.OpCode = OpCodes.Stloc;
+                            instruction.Operand = retStorage;
+                            ilGen.InsertAfter(instruction, ilGen.Create(OpCodes.Leave, FirstInstructionAfterWrappedCode));
+                        }
                     }
-                    //ilGen.InsertBefore(instr, ilGen.Create(OpCodes.Stloc, localToStoreResult));
-                    retCmd.OpCode = OpCodes.Br; // Todo: make this "leave ACTUALFIRSTCMD AFTER BLOCK"
-                    retCmd.Operand = firstInstructionAfterProfiling;
                 }
             }
+            public void DoActualWrapping(params Instruction[] handlerCode)
+            {
+                if (FirstInstructionAfterWrappedCode == null)
+                {
+                    foreach (var instruction in handlerCode)
+                    {
+                        ilGen.Append(instruction);
+                    }
+                    ilGen.Append(ilGen.Create(OpCodes.Endfinally));
+                }
+                else
+                {
+                    ilGen.InsertBefore(FirstInstructionAfterWrappedCode, handlerCode);
+                    ilGen.InsertBefore(FirstInstructionAfterWrappedCode, ilGen.Create(OpCodes.Endfinally));
+                }
 
-            Instruction readdedFirstInstructionAfterHandler = firstInstructionAfterProfiling.Clone();
-            ilGen.InsertAfter(firstInstructionAfterProfiling, readdedFirstInstructionAfterHandler);
-            firstInstructionAfterProfiling.OpCode = OpCodes.Leave;
-            firstInstructionAfterProfiling.Operand = readdedFirstInstructionAfterHandler;
-            Instruction handlerFirstInstruction;
+                foreach (var oldHandler in method.Body.ExceptionHandlers)
+                {
+                    if (oldHandler.TryEnd == null)
+                        oldHandler.TryEnd = handlerCode.First();
+                    if (oldHandler.HandlerEnd == null)
+                        oldHandler.HandlerEnd = handlerCode.First();
+                }
+                var handler = new ExceptionHandler(ExceptionHandlerType.Finally)
+                {
+                    TryStart = method.Body.Instructions.First(),
+                    TryEnd = handlerCode.First(),
+                    HandlerStart = handlerCode.First(),
+                    HandlerEnd = FirstInstructionAfterWrappedCode
+                };
+                method.Body.ExceptionHandlers.Add(handler);
+            }
+        }
+        public void Inject_AddProfileCalls(int methodId, bool useLeaveEx, MethodDefinition method)
+        {
+            if (!method.Body.Instructions.Any())
+            {
+                return;
+            }
+
+            method.Body.SimplifyMacros();
+            var ilGen = method.Body.GetILProcessor();
+
+            var modifier = new ExceptionHandlerWrapper(method);
+            
+            modifier.PrepareAndGetLastWrappedInstruction();
+
             if (useLeaveEx)
-            {
-                ilGen.InsertAfter(firstInstructionAfterProfiling,
-                    handlerFirstInstruction = ilGen.Create(OpCodes.Ldc_I4, methodId),
-                    ilGen.Create(OpCodes.Call, meth_leave),
-                    ilGen.Create(OpCodes.Endfinally)
-                    );
-            }
+                modifier.DoActualWrapping(ilGen.Create(OpCodes.Ldc_I4, methodId), ilGen.Create(OpCodes.Call, Method_ProfilerLeaveEx));
             else
-            {
-                ilGen.InsertAfter(firstInstructionAfterProfiling,
-                    handlerFirstInstruction = ilGen.Create(OpCodes.Call, meth_leave),
-                    ilGen.Create(OpCodes.Endfinally)
-                    );
-            }
-
-            var handler = new ExceptionHandler(ExceptionHandlerType.Finally)
-            {
-                TryStart = method.Body.Instructions.First(),
-                TryEnd = handlerFirstInstruction,
-                HandlerStart = handlerFirstInstruction,
-                HandlerEnd = readdedFirstInstructionAfterHandler
-            };
-            method.Body.ExceptionHandlers.Add(handler);
+                modifier.DoActualWrapping(ilGen.Create(OpCodes.Call, Method_ProfilerLeave));
 
             ilGen.InsertBefore(
                 method.Body.Instructions.First(),
-                //ilGen.Create(OpCodes.Ldftn, method),
                 ilGen.Create(OpCodes.Ldc_I4, methodId),
-                ilGen.Create(OpCodes.Call, meth_enter)
+                ilGen.Create(OpCodes.Call, Method_ProfilerEnter)
                 );
-
+            
             method.Body.OptimizeMacros();
         }
 

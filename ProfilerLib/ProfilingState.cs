@@ -20,7 +20,7 @@ namespace ProfilerLib
         class ThreadData
         {
             public int thread_id;
-            //public string Name; does not look like we are able to query a threads...
+            //public string Name; does not look like we are able to query a threads .net name...
             public long FirstRecorded;
             public long LastRecorded;
             public Stack<StackFrame> Stack = new Stack<StackFrame>();
@@ -106,8 +106,15 @@ namespace ProfilerLib
         void processEvent_Leave(LeaveMethodEvent leaveMethodEvent, ThreadData current_thread)
         {
             current_thread.LastRecorded = leaveMethodEvent.time;
-            var leftFrame = current_thread.Stack.Pop();
             var leaveMethodExEvent = leaveMethodEvent as LeaveMethodExEvent;
+            if (current_thread.Stack.Count <= 0)
+            {
+                if (leaveMethodExEvent != null)
+                    throw new Exception("Unexpected leave of " + MethodLibrary.GetText(leaveMethodExEvent.MethodId) + ". The stack of this thread is empty!");
+                else
+                    throw new Exception("Unexpected leave. The stack of this thread is empty!");
+            }
+            var leftFrame = current_thread.Stack.Pop();
             if ((leaveMethodExEvent != null) && (leftFrame.Site.MethodId != leaveMethodExEvent.MethodId))
             {
                 throw new Exception("Leaving unexpected site. Expected: " + MethodLibrary.GetText(leftFrame.Site.MethodId) + ", got " + MethodLibrary.GetText(leaveMethodExEvent.MethodId));
@@ -196,26 +203,30 @@ namespace ProfilerLib
 
         #region automatic report saving
         DateTime autoSaveLastDate;
-        System.IO.FileStream autoSaveStream;
+        System.IO.FileInfo autoSaveTargetFile;
         int autoSaveInterval;
-        public void SetAutoSaving(int interval, System.IO.FileStream fileSteam)
+        public void SetAutoSaving(int interval, System.IO.FileInfo file)
         {
             autoSaveInterval = interval;
             autoSaveLastDate = DateTime.Now;
-            autoSaveStream = fileSteam;
+            autoSaveTargetFile = file;
         }
 
         void autoSaveStatus()
         {
             // Todo: No stack frames here, as well...
-            autoSaveStream.SetLength(0);
-            var tw = new System.IO.StreamWriter(autoSaveStream);
-            tw.Write("SubtractedPerCallError = " + PerCallErrorToSubtract + Environment.NewLine + Environment.NewLine);
-            foreach (var ep in entryPoints.Values.OrderByDescending(el => el.RunDuration))
+
+            using (var tw = autoSaveTargetFile.CreateText())
             {
-                ProfilerLib.ReportGeneration.GetReportRecursiveLineBased(line=>tw.Write(line), new StringBuilder(), ep, 0, ep.RunDuration, ep.RunDuration);
+                //autoSaveStream.SetLength(0);
+                //var tw = new System.IO.StreamWriter(autoSaveStream);
+                tw.Write("SubtractedPerCallError = " + PerCallErrorToSubtract + Environment.NewLine + Environment.NewLine);
+                foreach (var ep in entryPoints.Values.OrderByDescending(el => el.RunDuration))
+                {
+                    ProfilerLib.ReportGeneration.GetReportRecursiveLineBased(line => tw.Write(line), new StringBuilder(), ep, 0, ep.RunDuration, ep.RunDuration);
+                }
+                autoSaveLastDate = DateTime.Now;
             }
-            autoSaveLastDate = DateTime.Now;
         }
         #endregion
     }
